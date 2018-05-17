@@ -42,7 +42,7 @@ class ShapeParser:
         """
         nodeShapeUris = set()
 
-        qres = g.query("""
+        qres = self.g.query("""
             SELECT DISTINCT ?root
             WHERE {
                 ?root ?s ?o .
@@ -329,14 +329,14 @@ class ShapeParser:
         val = self.g.value(subject=shapeUri, predicate=self.sh.group, any=False)
         if val is not None:
             wellFormedShape.isSet['group'] = True
-            wellFormedShape.group = parseWellFormedShape(val)
+            wellFormedShape.group = self.parseWellFormedShape(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.order, any=False)
         if val is not None:
             wellFormedShape.isSet['order'] = True
             wellFormedShape.group = int(val)
 
-        checkConstraints(wellFormedShape)
+        self.checkConstraints(wellFormedShape)
 
         try:
             propertyShape = PropertyShape()
