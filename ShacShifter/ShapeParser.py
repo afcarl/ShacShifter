@@ -3,6 +3,7 @@
 import logging
 import rdflib
 from rdflib.exceptions import UniquenessError
+from .modules.WellFormedShape import WellFormedShape
 from .modules.NodeShape import NodeShape
 from .modules.PropertyShape import PropertyShape
 
@@ -35,40 +36,21 @@ class ShapeParser:
         return self.nodeShapes
 
     def getNodeShapeUris(self):
-        """Get URIs of all Node shapes.
+        """Get URIs of all Root Node shapes.
 
         returns: list of Node Shape URIs
         """
         nodeShapeUris = set()
 
-        for stmt in self.g.subjects(rdflib.RDF.type, self.sh.NodeShape):
-            if stmt not in nodeShapeUris:
-                nodeShapeUris.add(stmt)
+        qres = g.query("""
+            SELECT DISTINCT ?root
+            WHERE {
+                ?root ?s ?o .
+                FILTER NOT EXISTS {?a ?b ?root .}
+            }""")
 
-        for stmt in self.g.subjects(self.sh.property, None):
-            if stmt not in nodeShapeUris:
-                nodeShapeUris.add(stmt)
-
-        for stmt in self.g.subjects(self.sh.targetClass, None):
-            if stmt not in nodeShapeUris:
-                nodeShapeUris.add(stmt)
-
-        for stmt in self.g.subjects(self.sh.targetNode, None):
-            if stmt not in nodeShapeUris:
-                nodeShapeUris.add(stmt)
-
-        for stmt in self.g.subjects(self.sh.targetObjectsOf, None):
-            if stmt not in nodeShapeUris:
-                nodeShapeUris.add(stmt)
-
-        for stmt in self.g.subjects(self.sh.targetSubjectsOf, None):
-            if stmt not in nodeShapeUris:
-                nodeShapeUris.append(stmt)
-
-        # actually not exactly a nodeshape
-        # for stmt in self.g.subjects(rdflib.RDF.type, self.sh.PropertyGroup):
-        #     if not(stmt in nodeShapeUris):
-        #         nodeShapeUris.append(stmt)
+        for row in qres:
+            nodeShapeUris.add(row.root)
 
         return set(list(nodeShapeUris))
 
@@ -90,40 +72,42 @@ class ShapeParser:
 
         return propertyShapeUris
 
-    def parseNodeShape(self, shapeUri):
-        """Parse a NodeShape given by its URI.
+    def parseWellFormedShape(self, shapeUri):
+        """Parse a WellFormedShape given by its URI.
 
-        args:   graph g
-                string shapeUri
-        returns: object NodeShape
+        args:    string shapeUri
+        returns: object WellFormedShape/NodeShape/PropertyShape
         """
-        nodeShape = NodeShape()
-        nodeShape.uri = str(shapeUri)
+        wellFormedShape = WellFormedShape()
+        # if empty "URI's" are bad change it later on to add Blanknodes too
+        if shapeUri != rdflib.term.BNode(shapeUri):
+            wellFormedShape.isSet['uri'] = True
+            wellFormedShape.uri = str(shapeUri)
 
         for stmt in self.g.objects(shapeUri, self.sh.targetClass):
-            nodeShape.isSet['targetClass'] = True
-            nodeShape.targetClass.append(str(stmt))
+            wellFormedShape.isSet['targetClass'] = True
+            wellFormedShape.targetClass.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.targetNode):
-            nodeShape.isSet['targetNode'] = True
-            nodeShape.targetNode.append(str(stmt))
+            wellFormedShape.isSet['targetNode'] = True
+            wellFormedShape.targetNode.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.targetObjectsOf):
-            nodeShape.isSet['targetObjectsOf'] = True
-            nodeShape.targetObjectsOf.append(str(stmt))
+            wellFormedShape.isSet['targetObjectsOf'] = True
+            wellFormedShape.targetObjectsOf.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.targetSubjectsOf):
-            nodeShape.isSet['targetSubjectsOf'] = True
-            nodeShape.targetSubjectsOf.append(str(stmt))
+            wellFormedShape.isSet['targetSubjectsOf'] = True
+            wellFormedShape.targetSubjectsOf.append(str(stmt))
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.ignoredProperties)
         if val is not None:
-            nodeShape.isSet['ignoredProperties'] = True
+            wellFormedShape.isSet['ignoredProperties'] = True
             properties = val
             lastListEntry = False
 
             while not lastListEntry:
-                nodeShape.ignoredProperties.append(
+                wellFormedShape.ignoredProperties.append(
                     str(self.g.value(subject=properties, predicate=self.rdf.first))
                 )
                 # check if this was the last entry in the list
@@ -132,71 +116,56 @@ class ShapeParser:
                 properties = self.g.value(subject=properties, predicate=self.rdf.rest)
 
         for stmt in self.g.objects(shapeUri, self.sh.message):
-            nodeShape.isSet['message'] = True
+            wellFormedShape.isSet['message'] = True
             if (stmt.language is None):
-                nodeShape.message['default'] = str(stmt)
+                wellFormedShape.message['default'] = str(stmt)
             else:
-                nodeShape.message[stmt.language] = str(stmt)
+                wellFormedShape.message[stmt.language] = str(stmt)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.nodeKind)
         if val is not None:
-            nodeShape.isSet['nodeKind'] = True
-            nodeShape.nodeKind = str(val)
+            wellFormedShape.isSet['nodeKind'] = True
+            wellFormedShape.nodeKind = str(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.closed)
 
         if val is not None:
-            nodeShape.isSet['closed'] = True
+            wellFormedShape.isSet['closed'] = True
             if (str(val).lower() == "true"):
-                nodeShape.closed = True
+                wellFormedShape.closed = True
 
         for stmt in self.g.objects(shapeUri, self.sh.property):
-            nodeShape.isSet['property'] = True
-            propertyShape = self.parsePropertyShape(stmt)
+            wellFormedShape.isSet['property'] = True
+            propertyShape = self.parseWellFormedShape(stmt)
             self.propertyShapes[stmt] = propertyShape
-            nodeShape.properties.append(propertyShape)
-
-        return nodeShape
-
-    def parsePropertyShape(self, shapeUri):
-        """Parse a PropertyShape given by its URI.
-
-        args:   string shapeUri
-        returns: object PropertyShape
-        """
-        propertyShape = PropertyShape()
-        self.logger.debug('Parsing PropertyShape with URI {}'.format(shapeUri))
-
-        if shapeUri != rdflib.term.BNode(shapeUri):
-            propertyShape.isSet['uri'] = True
-            propertyShape.uri = str(shapeUri)
+            wellFormedShape.properties.append(propertyShape)
 
         pathStart = self.g.value(subject=shapeUri, predicate=self.sh.path, any=False)
 
         if pathStart is not None:
-            propertyShape.path = self.getPropertyPath(pathStart)
+            wellFormedShape.path = self.getPropertyPath(pathStart)
         else:
             if self.g.subjects(predicate=self.sh.qualifiedValueShape, object=shapeUri) is None:
                 raise Exception('No value for mandatory argument {} found.'.format(self.sh.path))
 
         for stmt in self.g.objects(shapeUri, self.sh['class']):
-            propertyShape.isSet['classes'] = True
-            propertyShape.classes.append(str(stmt))
+            wellFormedShape.isSet['classes'] = True
+            wellFormedShape.classes.append(str(stmt))
 
         val = self.g.value(subject=shapeUri, predicate=self.sh['name'])
         if val is not None:
-            propertyShape.isSet['name'] = True
-            propertyShape.name = str(val)
+            wellFormedShape.isSet['name'] = True
+            wellFormedShape.name = str(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh['description'])
         if val is not None:
-            propertyShape.isSet['description'] = True
-            propertyShape.description = str(val)
+            wellFormedShape.isSet['description'] = True
+            wellFormedShape.description = str(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.datatype)
         if val is not None:
-            propertyShape.isSet['dataType'] = True
-            propertyShape.dataType = str(val)
+            wellFormedShape.isSet['dataType'] = True
+            wellFormedShape.dataType = str(val)
 
         try:
             minCount = self.g.value(subject=shapeUri, predicate=self.sh.minCount, any=False)
@@ -204,8 +173,8 @@ class ShapeParser:
             raise Exception('Conflict found. More than one value for {}'.format(self.sh.minCount))
 
         if minCount is not None:
-            propertyShape.isSet['minCount'] = True
-            propertyShape.minCount = int(minCount)
+            wellFormedShape.isSet['minCount'] = True
+            wellFormedShape.minCount = int(minCount)
 
         try:
             maxCount = self.g.value(subject=shapeUri, predicate=self.sh.maxCount, any=False)
@@ -213,62 +182,62 @@ class ShapeParser:
             raise Exception('Conflict found. More than one value for {}'.format(self.sh.maxCount))
 
         if maxCount is not None:
-            propertyShape.isSet['maxCount'] = True
-            propertyShape.maxCount = int(maxCount)
-            if (propertyShape.isSet['minCount'] and
-                    propertyShape.minCount > propertyShape.maxCount):
+            wellFormedShape.isSet['maxCount'] = True
+            wellFormedShape.maxCount = int(maxCount)
+            if (wellFormedShape.isSet['minCount'] and
+                    wellFormedShape.minCount > wellFormedShape.maxCount):
                 raise Exception(
                     'Conflict found. sh:maxCount {} must be greater or eqal sh:minCount {}'
-                    .format(propertyShape.maxCount, propertyShape.minCount))
+                    .format(wellFormedShape.maxCount, wellFormedShape.minCount))
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.minExclusive)
         if val is not None:
-            propertyShape.isSet['minExclusive'] = True
-            propertyShape.minExclusive = int(val)
+            wellFormedShape.isSet['minExclusive'] = True
+            wellFormedShape.minExclusive = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.minInclusive)
         if val is not None:
-            propertyShape.isSet['minInclusive'] = True
-            propertyShape.minInclusive = int(val)
+            wellFormedShape.isSet['minInclusive'] = True
+            wellFormedShape.minInclusive = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.maxExclusive)
         if val is not None:
-            propertyShape.isSet['maxExclusive'] = True
-            propertyShape.maxExclusive = int(val)
+            wellFormedShape.isSet['maxExclusive'] = True
+            wellFormedShape.maxExclusive = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.maxInclusive)
         if val is not None:
-            propertyShape.isSet['maxInclusive'] = True
-            propertyShape.maxInclusive = int(val)
+            wellFormedShape.isSet['maxInclusive'] = True
+            wellFormedShape.maxInclusive = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.minLength)
         if val is not None:
-            propertyShape.isSet['minLength'] = True
-            propertyShape.minLength = int(val)
+            wellFormedShape.isSet['minLength'] = True
+            wellFormedShape.minLength = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.maxLength)
         if val is not None:
-            propertyShape.isSet['maxLength'] = True
-            propertyShape.maxLength = int(val)
+            wellFormedShape.isSet['maxLength'] = True
+            wellFormedShape.maxLength = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.pattern)
         if val is not None:
-            propertyShape.isSet['pattern'] = True
-            propertyShape.pattern = str(val)
+            wellFormedShape.isSet['pattern'] = True
+            wellFormedShape.pattern = str(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.flags)
         if val is not None:
-            propertyShape.isSet['flags'] = True
-            propertyShape.flags = str(val)
+            wellFormedShape.isSet['flags'] = True
+            wellFormedShape.flags = str(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.languageIn)
         if val is not None:
-            propertyShape.isSet['languageIn'] = True
+            wellFormedShape.isSet['languageIn'] = True
             languages = val
             lastListEntry = False
 
             while not lastListEntry:
-                propertyShape.languageIn.append(
+                wellFormedShape.languageIn.append(
                     str(self.g.value(subject=languages, predicate=self.rdf.first))
                 )
                 # check if this was the last entry in the list
@@ -278,43 +247,43 @@ class ShapeParser:
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.uniqueLang)
         if val is not None:
-            propertyShape.isSet['uniqueLang'] = True
+            wellFormedShape.isSet['uniqueLang'] = True
             if (str(val).lower() == "true"):
-                propertyShape.uniqueLang = True
+                wellFormedShape.uniqueLang = True
 
         for stmt in self.g.objects(shapeUri, self.sh.equals):
-            propertyShape.isSet['equals'] = True
-            propertyShape.equals.append(str(stmt))
+            wellFormedShape.isSet['equals'] = True
+            wellFormedShape.equals.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.disjoint):
-            propertyShape.isSet['disjoint'] = True
-            propertyShape.disjoint.append(str(stmt))
+            wellFormedShape.isSet['disjoint'] = True
+            wellFormedShape.disjoint.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.lessThan):
-            propertyShape.isSet['lessThan'] = True
-            propertyShape.lessThan.append(str(stmt))
+            wellFormedShape.isSet['lessThan'] = True
+            wellFormedShape.lessThan.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.lessThanOrEquals):
-            propertyShape.isSet['lessThanOrEquals'] = True
-            propertyShape.lessThanOrEquals.append(str(stmt))
+            wellFormedShape.isSet['lessThanOrEquals'] = True
+            wellFormedShape.lessThanOrEquals.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.node):
-            propertyShape.isSet['node'] = True
-            propertyShape.nodes.append(str(stmt))
+            wellFormedShape.isSet['node'] = True
+            wellFormedShape.nodes.append(str(stmt))
 
         for stmt in self.g.objects(shapeUri, self.sh.hasValue):
-            propertyShape.isSet['hasValue'] = True
-            propertyShape.hasValue.append(stmt)
+            wellFormedShape.isSet['hasValue'] = True
+            wellFormedShape.hasValue.append(stmt)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh['in'])
         if val is not None:
-            propertyShape.isSet['shIn'] = True
+            wellFormedShape.isSet['shIn'] = True
             lastListEntry = False
 
             while True:
                 first_value = self.g.value(subject=val, predicate=self.rdf.first, any=False)
                 rest_value = self.g.value(subject=val, predicate=self.rdf.rest, any=False)
-                propertyShape.shIn.append(first_value)
+                wellFormedShape.shIn.append(first_value)
                 # check if this was the last entry in the list
                 if rest_value == self.rdf.nil:
                     break
@@ -322,43 +291,66 @@ class ShapeParser:
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.order)
         if val is not None:
-            propertyShape.isSet['order'] = True
-            propertyShape.order = int(val)
+            wellFormedShape.isSet['order'] = True
+            wellFormedShape.order = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedValueShape)
         if val is not None:
-            propertyShape.isSet['qualifiedValueShape'] = True
-            # TODO qualifiedValueShape != propertyShape but well-formed shape
-            propertyShape.qualifiedValueShape = self.parsePropertyShape(val)
+            wellFormedShape.isSet['qualifiedValueShape'] = True
+            wellFormedShape.qualifiedValueShape = self.parseWellFormedShape(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedValueShapesDisjoint)
         if val is not None:
-            propertyShape.isSet['qualifiedValueShapesDisjoint'] = True
+            wellFormedShape.isSet['qualifiedValueShapesDisjoint'] = True
             if (str(val).lower() == "true"):
-                propertyShape.qualifiedValueShapesDisjoint = True
+                wellFormedShape.qualifiedValueShapesDisjoint = True
                 # TODO check Sibling Shapes
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedMinCount, any=False)
         if val is not None:
-            propertyShape.isSet['qualifiedMinCount'] = True
-            propertyShape.qualifiedMinCount = int(val)
+            wellFormedShape.isSet['qualifiedMinCount'] = True
+            wellFormedShape.qualifiedMinCount = int(val)
 
         val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedMaxCount, any=False)
         if val is not None:
-            if (propertyShape.isSet['qualifiedMinCount'] and
-                    propertyShape.qualifiedMinCount > int(val)):
+            if (wellFormedShape.isSet['qualifiedMinCount'] and
+                    wellFormedShape.qualifiedMinCount > int(val)):
                 raise Exception('sh:qualifiedMinCount greater than sh:qualifiedMaxCount.')
-            propertyShape.isSet['qualifiedMaxCount'] = True
-            propertyShape.qualifiedMaxCount = int(val)
+            wellFormedShape.isSet['qualifiedMaxCount'] = True
+            wellFormedShape.qualifiedMaxCount = int(val)
 
         for stmt in self.g.objects(shapeUri, self.sh.message):
-            propertyShape.isSet['message'] = True
+            wellFormedShape.isSet['message'] = True
             if (stmt.language is None):
-                propertyShape.message['default'] = str(stmt)
+                wellFormedShape.message['default'] = str(stmt)
             else:
-                propertyShape.message[stmt.language] = str(stmt)
+                wellFormedShape.message[stmt.language] = str(stmt)
 
-        return propertyShape
+        val = self.g.value(subject=shapeUri, predicate=self.sh.group, any=False)
+        if val is not None:
+            wellFormedShape.isSet['group'] = True
+            wellFormedShape.group = parseWellFormedShape(val)
+
+        val = self.g.value(subject=shapeUri, predicate=self.sh.order, any=False)
+        if val is not None:
+            wellFormedShape.isSet['order'] = True
+            wellFormedShape.group = int(val)
+
+        checkConstraints(wellFormedShape):
+
+        try:
+            propertyShape = PropertyShape()
+            propertyShape.fill(wellFormedShape)
+            shape = propertyShape
+        except TypeError:
+            try:
+                nodeShape = NodeShape()
+                nodeShape.fill(wellFormedShape)
+                shape = nodeShape
+            except TypeError:
+                shape = wellFormedShape
+
+        return shape
 
     def getPropertyPath(self, pathUri):
         # not enforcing blank nodes here, but stripping the link nodes from the data structure
@@ -408,3 +400,10 @@ class ShapeParser:
             return str(pathUri)
         else:
             raise Exception('Object of sh:path is no URI')
+
+    def checkConstraints(wellFormedShape):
+        # TODO add full constraint check (e.g. sh:A and sh:B can't be in the
+        # same Shape or sh:C can only be in Propertyshapes)
+        if wellFormedShape.isSet['targetNode']:
+            
+        pass

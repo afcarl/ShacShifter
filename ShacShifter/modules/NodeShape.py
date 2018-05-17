@@ -22,3 +22,16 @@ class NodeShape:
             if not var.startswith('__'):
                 isSet[var] = False
         self.isSet = isSet
+
+    def fill(self, wellFormedShape):
+        # is check for properties necessary? without targets the nodeshape is useless
+        if not (wellFormedShape.isSet('targetClass')
+                || wellFormedShape.isSet('targetNode')
+                || wellFormedShape.isSet('targetObjectsOf')
+                || wellFormedShape.isSet('targetSubjectsOf')
+                || wellFormedShape.isSet('properties')):
+            raise TypeError('Given Shape is no NodeShape')
+        for var in vars(self):
+            if wellFormedShape.isSet[var]:
+                self.isSet[var] = true
+                setattr(self, var, getattr(wellFormedShape, var))
