@@ -65,9 +65,9 @@ class ShapeParser:
         propertyShapeUris = set()
 
         for stmt in self.g.subjects(self.sh.path, None):
-            if ((self.g.value(predicate=self.sh.property, object=stmt)) is None
-                    and (self.g.value(predicate=self.rdf.first, object=stmt)) is None
-                    and (self.g.value(predicate=self.sh['not'], object=stmt)) is None):
+            if (self.g.value(predicate=self.sh.property, object=stmt) is None and
+                self.g.value(predicate=self.rdf.first, object=stmt) is None and
+                self.g.value(predicate=self.sh['not'], object=stmt) is None):
                 propertyShapeUris.add(stmt)
 
         return propertyShapeUris
@@ -336,7 +336,7 @@ class ShapeParser:
             wellFormedShape.isSet['order'] = True
             wellFormedShape.group = int(val)
 
-        checkConstraints(wellFormedShape):
+        checkConstraints(wellFormedShape)
 
         try:
             propertyShape = PropertyShape()
@@ -404,6 +404,4 @@ class ShapeParser:
     def checkConstraints(wellFormedShape):
         # TODO add full constraint check (e.g. sh:A and sh:B can't be in the
         # same Shape or sh:C can only be in Propertyshapes)
-        if wellFormedShape.isSet['targetNode']:
-            
         pass
