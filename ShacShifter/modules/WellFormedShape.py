@@ -4,7 +4,7 @@ class WellFormedShape:
     def __init__(self):
         self.classUri = ''
         self.uri = ''
-        self.name = ''
+        self.name = '' #name and description can have more values than 1, but its semi-restricted to 1 per language tag?
         self.description = ''
         self.targetClass = []
         self.targetNode = []
@@ -40,10 +40,10 @@ class WellFormedShape:
         self.lessThan = []
         self.lessThanOrEquals = []
         self.nodes = []
-        self.qualifiedValueShape = ''
-        self.qualifiedValueShapesDisjoint = False
-        self.qualifiedMinCount = -1
-        self.qualifiedMaxCount = -1
+        self.qualifiedValueShape = []
+        self.qualifiedValueShapesDisjoint = []
+        self.qualifiedMinCount = -[]
+        self.qualifiedMaxCount = -[]
         self.hasValue = []
         self.shIn = []
         self.order = -1

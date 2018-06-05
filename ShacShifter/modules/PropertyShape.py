@@ -25,19 +25,19 @@ class PropertyShape:
         self.lessThan = []
         self.lessThanOrEquals = []
         self.nodes = []
-        self.qualifiedValueShape = ''
-        self.qualifiedValueShapesDisjoint = False
-        self.qualifiedMinCount = -1
-        self.qualifiedMaxCount = -1
+        self.qualifiedValueShape = []
+        self.qualifiedValueShapesDisjoint = []
+        self.qualifiedMinCount = -[]
+        self.qualifiedMaxCount = -[]
         self.hasValue = []
         self.shIn = []
         self.order = -1
         self.group = ''
         self.message = {}
-        # self.sOr = []
-        # self.sNot = []
-        # self.sAnd = []
-        # self.sXone = []
+        self.sOr = []
+        self.sNot = []
+        self.sAnd = []
+        self.sXone = []
         isSet = {}
         for var in vars(self):
             if not var.startswith('__'):
@@ -45,7 +45,7 @@ class PropertyShape:
         self.isSet = isSet
 
     def fill(self, wellFormedShape):
-        if wellFormedShape.path == '':
+        if wellFormedShape.isSet['path']:
             raise TypeError('Given Shape is no PropertyShape (no path)')
         for var in vars(self):
             if wellFormedShape.isSet[var]:

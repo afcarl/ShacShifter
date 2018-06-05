@@ -11,10 +11,10 @@ class NodeShape:
         self.properties = []
         self.closed = False
         self.ignoredProperties = []
-        # self.sOr = []
-        # self.sNot = []
-        # self.sAnd = []
-        # self.sXone = []
+        self.sOr = []
+        self.sNot = []
+        self.sAnd = []
+        self.sXone = []
         self.message = {}
         self.severity = -1
         isSet = {}
