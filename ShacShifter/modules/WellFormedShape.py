@@ -22,7 +22,7 @@ class WellFormedShape:
         self.sXone = []
         self.message = {}
         self.classes = []
-        self.dataType = ''
+        self.datatype = ''
         self.minCount = -1
         self.maxCount = -1
         self.minExclusive = -1
