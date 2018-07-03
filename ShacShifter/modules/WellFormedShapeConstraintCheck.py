@@ -4,15 +4,19 @@ from rdflib.exceptions import UniquenessError
 from .modules.WellFormedShape import WellFormedShape
 from .modules.NodeShape import NodeShape
 from .modules.PropertyShape import PropertyShape
+from .modules.Exceptions import 
 class WellFormedShapeConstraintCheck:
 
-    def __init__(self, graph):
+    def __init__(self, graph, shapeUri):
         self.rdf = rdflib.Namespace('http://www.w3.org/1999/02/22-rdf-syntax-ns#')
         self.sh = rdflib.Namespace('http://www.w3.org/ns/shacl#')
+        self.xsd = rdflib.NameSpace('http://www.w3.org/2001/XMLSchema#')
         self.g = graph
+        self.shapeUri = shapeUri
         self.errors = list()
+        self.checkConstraints()
 
-    def shaclListConstraint(self, listUri, datatype=None):
+    def shaclListConstraint(self, listUri, nodeKind=None, datatype=None):
         """Checks for the Shacllist Constraints.
 
         args:    rdflib.term.URIRef or rdflib.term.BNode listUri
@@ -28,11 +32,12 @@ class WellFormedShapeConstraintCheck:
             if uri in shaclList:
                 self.errors.append('Loop in the shacllist:{}'.format(uri))
             shaclList.append(uri)
+            if not nodeKind is None:
+                val = str(self.g.value(subject=uri, predicate=self.rdf.first))
+                self.nodeKindConstraint(val, nodeKind[0], nodeKind[1], nodeKind[2])
             if not datatype is None:
                 val = str(self.g.value(subject=uri, predicate=self.rdf.first))
-                self.nodeKindConstraint(val, False, False, True)
-                if val.datatype != datatype:
-                    self.errors.append('Conflict found. Object has the wrong type:{}'.format(val))
+                self.datatypeConstraint(val, datatype)
             # check if this was the last entry in the list
             if self.g.value(subject=uri, predicate=self.rdf.rest) == self.rdf.nil:
                 lastListEntry = True
@@ -47,27 +52,17 @@ class WellFormedShapeConstraintCheck:
                  boolean isLiteral
         returns: None
         """
-        if type(object) is list:
-            for obj in object:
-                correctType = False
-                if isUri and type(object) is rdflib.term.URIRef:
-                    correctType = True
-                if isBNode and type(object) is rdflib.term.BNode:
-                    correctType = True
-                if isLiteral and type(object) is rdflib.term.literal:
-                    correctType = True
-                if not correctType:
-                    self.errors.append('Conflict found. Object has the wrong type:{}'.format(object))
-        else:
-            correctType = False
-            if isUri and type(object) is rdflib.term.URIRef:
-                correctType = True
-            if isBNode and type(object) is rdflib.term.BNode:
-                correctType = True
-            if isLiteral and type(object) is rdflib.term.literal:
-                correctType = True
-            if not correctType:
-                self.errors.append('Conflict found. Object has the wrong type:{}'.format(object))
+        correctType = False
+        if isUri and type(object) is rdflib.term.URIRef:
+            correctType = True
+        if isBNode and type(object) is rdflib.term.BNode:
+            correctType = True
+        if isLiteral and type(object) is rdflib.term.literal:
+            correctType = True
+        if not correctType:
+            self.errors.append(NodeKindConstraintError('Conflict found. Object has the wrong type:{}'.format(object)))
+
+    def datatypeConstraint(self, object, datatype):
 
     def maxConstraint(self):
         """Checks for the max Constraints.
@@ -190,6 +185,11 @@ class WellFormedShapeConstraintCheck:
         except UniquenessError:
             self.errors.append('Conflict found for {}'.format(self.sh.group))
 
+        try:
+            val = self.g.value(subject=shapeUri, predicate=self.sh.languageIn, any=False)
+        except UniquenessError:
+            self.errors.append('Conflict found for {}'.format(self.sh.languageIn))
+
     def checkConstraints(wellFormedShape):
         """Checks for the nodekind Constraints
 
@@ -203,88 +203,106 @@ class WellFormedShapeConstraintCheck:
         # multiple parameters and generally all "only one instance" checks are in in the parse function
         # path constraints are kinda loosened (allow uris) and checked in the actual parse i guess?
         # how to check pattern regex being sparql valid?
-        # node kind constraints:
-        if wellFormedShape.isSet['targetNode']:
-            self.nodeKindConstraint(wellFormedShape.targetNode, True, False, True)
+        # list constraints
 
-        if wellFormedShape.isSet['targetClass']:
-            self.nodeKindConstraint(wellFormedShape.targetClass, True, False, False)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.languageIn)
+        if val is not None:
+            self.shaclListConstraint(val, None, self.xsd.string)
 
-        if wellFormedShape.isSet['targetSubjectsOf']:
-            self.nodeKindConstraint(wellFormedShape.targetSubjectsOf, True, False, False)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.ignoredProperties)
+        if val is not None:
+            self.shaclListConstraint(val, [True, False, False], None)
 
-        if wellFormedShape.isSet['targetObjectsOf']:
-            self.nodeKindConstraint(wellFormedShape.targetObjectsOf, True, False, False)
+        val = self.g.value(subject=shapeUri, predicate=self.sh['in'])
+        if val is not None:
+            self.shaclListConstraint(val, None, None)
 
-        if wellFormedShape.isSet['classes']:
-            self.nodeKindConstraint(wellFormedShape.classes, True, False, False)
+        # node kind constraints with multiple values:
+        for stmt in self.g.objects(shapeUri, self.sh.targetNode)
+            self.nodeKindConstraint(stmt, True, False, True)
 
-        if wellFormedShape.isSet['datatype']:
-            self.nodeKindConstraint(wellFormedShape.datatype, True, False, False)
+        for stmt in self.g.objects(shapeUri, self.sh.targetClass)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['minCount']:
-            self.nodeKindConstraint(wellFormedShape.minCount, False, False, True)
+        for stmt in self.g.objects(shapeUri, self.sh.targetSubjectsOf)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['maxCount']:
-            self.nodeKindConstraint(wellFormedShape.maxCount, False, False, True)
+        for stmt in self.g.objects(shapeUri, self.sh.targetObjectsOf)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['minExclusive']:
-            self.nodeKindConstraint(wellFormedShape.minExclusive, False, False, True)
+        for stmt in self.g.objects(shapeUri, self.sh.classes)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['minInclusive']:
-            self.nodeKindConstraint(wellFormedShape.minInclusive, False, False, True)
+        for stmt in self.g.objects(shapeUri, self.sh.equals)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['maxExclusive']:
-            self.nodeKindConstraint(wellFormedShape.maxExclusive, False, False, True)
+        for stmt in self.g.objects(shapeUri, self.sh.disjoint)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['maxInclusive']:
-            self.nodeKindConstraint(wellFormedShape.maxInclusive, False, False, True)
+        for stmt in self.g.objects(shapeUri, self.sh.lessThan)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['equals']:
-            self.nodeKindConstraint(wellFormedShape.equals, True, False, False)
+        for stmt in self.g.objects(shapeUri, self.sh.lessThanOrEquals)
+            self.nodeKindConstraint(stmt, True, False, False)
 
-        if wellFormedShape.isSet['disjoint']:
-            self.nodeKindConstraint(wellFormedShape.disjoint, True, False, False)
+        # node kind constraints with single values
+        val = self.g.value(subject=shapeUri, predicate=self.sh.datatype)
+        if val is not None:
+            self.nodeKindConstraint(val, True, False, False)
 
-        if wellFormedShape.isSet['lessThan']:
-            self.nodeKindConstraint(wellFormedShape.lessThan, True, False, False)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.minCount)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['lessThanOrEquals']:
-            self.nodeKindConstraint(wellFormedShape.lessThanOrEquals, True, False, False)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.maxCount)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['ignoredProperties']:
-            self.nodeKindConstraint(wellFormedShape.ignoredProperties, True, False, False)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.minExclusive)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['flags']:
-            self.nodeKindConstraint(wellFormedShape.flags, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.minInclusive)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['pattern']:
-            self.nodeKindConstraint(wellFormedShape.pattern, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.maxExclusive)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['languageIn']:
-            self.nodeKindConstraint(wellFormedShape.languageIn, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.maxInclusive)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['uniqueLang']:
-            self.nodeKindConstraint(wellFormedShape.uniqueLang, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.flags)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['qualifiedValueShapesDisjoint']:
-            self.nodeKindConstraint(
-                wellFormedShape.qualifiedValueShapesDisjoint, False, False, True
-            )
+        val = self.g.value(subject=shapeUri, predicate=self.sh.pattern)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['qualifiedMinCount']:
-            self.nodeKindConstraint(wellFormedShape.qualifiedMinCount, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.uniqueLang)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['qualifiedMaxCount']:
-            self.nodeKindConstraint(wellFormedShape.qualifiedMaxCount, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedValueShapesDisjoint)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['closed']:
-            self.nodeKindConstraint(wellFormedShape.closed, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedMinCount)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
-        if wellFormedShape.isSet['uniqueLang']:
-            self.nodeKindConstraint(wellFormedShape.uniqueLang, False, False, True)
+        val = self.g.value(subject=shapeUri, predicate=self.sh.qualifiedMaxCount)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
+
+        val = self.g.value(subject=shapeUri, predicate=self.sh.closed)
+        if val is not None:
+            self.nodeKindConstraint(val, False, False, True)
 
         maxConstraint()
 
-
+        # datatype constraints (message, rest)
 

@@ -79,6 +79,8 @@ class ShapeParser:
         returns: object WellFormedShape/NodeShape/PropertyShape
         """
         wellFormedShape = WellFormedShape()
+        # test for most relevant constraints
+        self.checkConstraints(self.g, shapeUri)
         # if empty "URI's" are bad change it later on to add Blanknodes too
         if shapeUri != rdflib.term.BNode(shapeUri):
             wellFormedShape.isSet['uri'] = True
@@ -119,13 +121,7 @@ class ShapeParser:
         for stmt in self.g.objects(shapeUri, self.sh.message):
             wellFormedShape.isSet['message'] = True
             if (stmt.language is None):
-                if(str(stmt.datatype) != 'http://www.w3.org/2001/XMLSchema#string')
-                    wellFormedShape.message['default'] = str(stmt)
-                else:
-                    raise Exception(
-                        'Conflict found. Literal has neither xsd:string nor language tag:{}'
-                        .format(self.sh.stmt)
-                    )
+                wellFormedShape.message['default'] = str(stmt)
             else:
                 wellFormedShape.message[stmt.language] = str(stmt)
 
@@ -357,19 +353,10 @@ class ShapeParser:
             wellFormedShape.isSet['qualifiedMaxCount'] = True
             wellFormedShape.qualifiedMaxCount = int(val)
 
-        for stmt in self.g.objects(shapeUri, self.sh.message):
-            wellFormedShape.isSet['message'] = True
-            if (stmt.language is None):
-                wellFormedShape.message['default'] = str(stmt)
-            else:
-                wellFormedShape.message[stmt.language] = str(stmt)
-
         val = self.g.value(subject=shapeUri, predicate=self.sh.group)
         if val is not None:
             wellFormedShape.isSet['group'] = True
             wellFormedShape.group = self.parseWellFormedShape(val)
-
-        self.checkConstraints(wellFormedShape)
 
         try:
             propertyShape = PropertyShape()
